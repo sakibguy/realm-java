@@ -15,6 +15,10 @@
  */
 package io.realm;
 
+import androidx.test.InstrumentationRegistry;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.rule.UiThreadTestRule;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -45,6 +49,8 @@ public abstract class QueryTests {
     public final ExpectedException thrown = ExpectedException.none();
     @Rule
     public final RunInLooperThread looperThread = new RunInLooperThread();
+    @Rule
+    public final UiThreadTestRule uiThreadTestRule = new UiThreadTestRule();
 
     protected static final List<RealmFieldType> SUPPORTED_IS_EMPTY_TYPES;
     protected static final List<RealmFieldType> NOT_SUPPORTED_IS_EMPTY_TYPES;
@@ -63,15 +69,6 @@ public abstract class QueryTests {
         list = new ArrayList<>(Arrays.asList(RealmFieldType.values()));
         list.removeAll(SUPPORTED_IS_EMPTY_TYPES);
 
-        // FIXME zaki50 revisit once we implement query for Primitive List
-        list.remove(RealmFieldType.STRING_LIST);
-        list.remove(RealmFieldType.BINARY_LIST);
-        list.remove(RealmFieldType.BOOLEAN_LIST);
-        list.remove(RealmFieldType.INTEGER_LIST);
-        list.remove(RealmFieldType.DOUBLE_LIST);
-        list.remove(RealmFieldType.FLOAT_LIST);
-        list.remove(RealmFieldType.DATE_LIST);
-
         NOT_SUPPORTED_IS_EMPTY_TYPES = Collections.unmodifiableList(list);
         NOT_SUPPORTED_IS_NOT_EMPTY_TYPES = Collections.unmodifiableList(list);
     }
@@ -80,6 +77,8 @@ public abstract class QueryTests {
 
     @Before
     public void setUp() throws Exception {
+        Realm.init(ApplicationProvider.getApplicationContext());
+        configFactory.create(); // Creates temporary folder (unsure why this is needed when Running RealmQueryTests independently.
         RealmConfiguration realmConfig = configFactory.createConfiguration();
         realm = Realm.getInstance(realmConfig);
     }

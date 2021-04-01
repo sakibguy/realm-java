@@ -25,9 +25,11 @@
 
 #include "java_accessor.hpp"
 #include "java_class_global_def.hpp"
-#include "object_accessor.hpp"
-#include "object-store/src/property.hpp"
+#include <realm/object-store/object_accessor.hpp>
+#include <realm/object-store/property.hpp>
 
+#include <realm/decimal128.hpp>
+#include <realm/object_id.hpp>
 #include <realm/util/any.hpp>
 
 using namespace realm::_impl;
@@ -39,10 +41,14 @@ using namespace realm::_impl;
     X(Float) \
     X(Double) \
     X(Date) \
+    X(ObjectId) \
+    X(Decimal) \
+    X(Mixed) \
     X(Binary) \
     X(Object) \
     X(List) \
     X(PropertyList) \
+    X(Dictionary) \
 
 namespace realm {
 
@@ -66,16 +72,20 @@ template <class T, class... Rest> constexpr T realm_max(T a, T b, Rest... rest) 
 }
 
 template <JavaValueType> struct JavaValueTypeRepr;
-template <> struct JavaValueTypeRepr<JavaValueType::Integer> { using Type = jlong; };
-template <> struct JavaValueTypeRepr<JavaValueType::String>  { using Type = std::string; };
-template <> struct JavaValueTypeRepr<JavaValueType::Boolean> { using Type = jboolean; };
-template <> struct JavaValueTypeRepr<JavaValueType::Float>   { using Type = jfloat; };
-template <> struct JavaValueTypeRepr<JavaValueType::Double>  { using Type = jdouble; };
-template <> struct JavaValueTypeRepr<JavaValueType::Date>    { using Type = Timestamp; };
-template <> struct JavaValueTypeRepr<JavaValueType::Binary>  { using Type = OwnedBinaryData; };
-template <> struct JavaValueTypeRepr<JavaValueType::Object>  { using Type = Obj*; };
-template <> struct JavaValueTypeRepr<JavaValueType::List>    { using Type = std::vector<JavaValue>; };
-template <> struct JavaValueTypeRepr<JavaValueType::PropertyList> { using Type = std::map<ColKey, JavaValue>; };
+template <> struct JavaValueTypeRepr<JavaValueType::Integer>       { using Type = jlong; };
+template <> struct JavaValueTypeRepr<JavaValueType::String>        { using Type = std::string; };
+template <> struct JavaValueTypeRepr<JavaValueType::Boolean>       { using Type = jboolean; };
+template <> struct JavaValueTypeRepr<JavaValueType::Float>         { using Type = jfloat; };
+template <> struct JavaValueTypeRepr<JavaValueType::Double>        { using Type = jdouble; };
+template <> struct JavaValueTypeRepr<JavaValueType::Date>          { using Type = Timestamp; };
+template <> struct JavaValueTypeRepr<JavaValueType::ObjectId>      { using Type = ObjectId; };
+template <> struct JavaValueTypeRepr<JavaValueType::Decimal>       { using Type = Decimal128; };
+template <> struct JavaValueTypeRepr<JavaValueType::Mixed>         { using Type = Mixed; };
+template <> struct JavaValueTypeRepr<JavaValueType::Binary>        { using Type = OwnedBinaryData; };
+template <> struct JavaValueTypeRepr<JavaValueType::Object>        { using Type = Obj*; };
+template <> struct JavaValueTypeRepr<JavaValueType::List>          { using Type = std::vector<JavaValue>; };
+template <> struct JavaValueTypeRepr<JavaValueType::PropertyList>  { using Type = std::map<ColKey, JavaValue>; };
+template <> struct JavaValueTypeRepr<JavaValueType::Dictionary>    { using Type = std::map<std::string, JavaValue>; };
 
 // Tagged union class representing all the values Java can send to Object Store
 struct JavaValue {
@@ -206,6 +216,11 @@ struct JavaValue {
         return get_as<JavaValueType::List>();
     }
 
+    auto& get_dictionary() const noexcept
+    {
+        return get_as<JavaValueType::Dictionary>();
+    }
+
     auto& get_property_list() const noexcept
     {
         return get_as<JavaValueType::PropertyList>();
@@ -215,6 +230,21 @@ struct JavaValue {
     auto& get_date() const noexcept
     {
         return get_as<JavaValueType::Date>();
+    }
+
+    auto& get_object_id() const noexcept
+    {
+        return get_as<JavaValueType::ObjectId>();
+    }
+
+    auto& get_decimal128() const noexcept
+    {
+        return get_as<JavaValueType::Decimal>();
+    }
+
+    auto& get_mixed() const noexcept
+    {
+        return get_as<JavaValueType::Mixed>();
     }
 
     auto& get_binary() const noexcept
@@ -266,6 +296,13 @@ struct JavaValue {
             case JavaValueType::Date:
                 ss << get_date();
                 return std::string(ss.str());
+            case JavaValueType::ObjectId:
+                return get_object_id().to_string();
+            case JavaValueType::Decimal:
+                return get_decimal128().to_string();
+            case JavaValueType::Mixed:
+                // TODO: Return actual string
+                return "Mixed";
             case JavaValueType::Binary:
                 ss << "Blob[";
                 ss << get_binary().size();
@@ -312,9 +349,11 @@ public:
     // This constructor is the only one used by the object accessor code, and is
     // used when recurring into a link or array property during object creation
     // (i.e. prop.type will always be Object or Array).
-    JavaContext(JavaContext& c, Property const& prop)
-            : m_env(c.m_env),
-              realm(c.realm)
+    JavaContext(JavaContext& c, Obj parent, Property const& prop)
+            : m_env(c.m_env)
+            , realm(c.realm)
+            , m_parent(std::move(parent))
+            , m_property(&prop)
             , object_schema(prop.type == PropertyType::Object ? &*realm->schema().find(prop.object_type) : c.object_schema)
     { }
 
@@ -346,25 +385,6 @@ public:
     default_value_for_property(ObjectSchema const&, Property const&) const
     {
         return util::none;
-    }
-
-    // Invoke `fn` with each of the values from an enumerable type
-    template<typename Func>
-    void enumerate_list(JavaValue& value, Func&& fn) {
-        if (value.get_type() == JavaValueType::List) {
-            for (const auto& v : value.get_list()) {
-                fn(v);
-            }
-        } else {
-            throw std::logic_error("Type is not a list");
-        }
-    }
-
-    // Determine if `value` boxes the same List as `list`
-    bool is_same_list(List const& /*list*/, JavaValue const& /*value*/)
-    {
-        // Lists from Java are currently never the same as the ones found in Object Store.
-        return false;
     }
 
     // Convert from core types to the boxed type. These are currently not used as Proxy objects read
@@ -401,9 +421,12 @@ public:
     // using the provided value. If `update` is true then upsert semantics
     // should be used for this.
     template<typename T>
-    T unbox(JavaValue const& /*v*/, CreatePolicy = CreatePolicy::Skip, ObjKey /*current_row*/ = ObjKey()) const {
+    T unbox(JavaValue const& /*v*/, CreatePolicy = CreatePolicy::Skip, ObjKey /*current_row*/ = ObjKey()) const
+    {
         throw std::logic_error("Missing template specialization"); // All types should have specialized templates
     }
+
+    Obj unbox_embedded(JavaValue const& v, CreatePolicy policy, Obj& parent, ColKey col, size_t ndx) const;
 
     bool is_null(JavaValue const& v) const noexcept { return !v.has_value(); }
     JavaValue null_value() const noexcept { return {}; }
@@ -427,9 +450,52 @@ public:
     // mimick this behavior so just return false here.
     bool allow_missing(JavaValue const&) const { return false; }
 
-private:
+    Obj create_embedded_object();
+
+    // Determine if `value` boxes the same List as `list`
+    bool is_same_list(List const& /*list*/, JavaValue const& /*value*/)
+    {
+        // Lists from Java are currently never the same as the ones found in Object Store.
+        return false;
+    }
+
+    bool is_same_dictionary(const object_store::Dictionary&, JavaValue const& /*value*/){
+        //TODO: Implement with sets
+        return false;
+    }
+
+    bool is_same_set(object_store::Set const&, JavaValue const& /*value*/){
+        //TODO: Implement with sets
+        return false;
+    }
+
+    template<typename Func>
+    void enumerate_collection(JavaValue& value, Func&& fn) {
+        if (value.get_type() == JavaValueType::List) {
+            for (const auto& v : value.get_list()) {
+                fn(v);
+            }
+        } else {
+            throw std::logic_error("Type is not a list");
+        }
+    }
+
+    template<typename Func>
+    void enumerate_dictionary(JavaValue& value, Func&& fn) {
+        if (value.get_type() == JavaValueType::Dictionary) {
+            for (const auto& v : value.get_dictionary()) {
+                fn(v.first, v.second);
+            }
+        } else {
+            throw std::logic_error("Type is not a dictionary");
+        }
+    }
+
+    private:
     JNIEnv* m_env;
     std::shared_ptr<Realm> realm;
+    Obj m_parent;
+    const Property* m_property = nullptr;
     const ObjectSchema* object_schema = nullptr;
 
     inline void check_value_not_null(JavaValue const& v, const char* expected_type) const
@@ -494,11 +560,29 @@ inline Timestamp JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) co
 }
 
 template <>
+inline Decimal128 JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
+{
+    return v.has_value() ? v.get_decimal128() : Decimal128(realm::null());
+}
+
+template <>
+inline Mixed JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
+{
+    return v.has_value() ? v.get_mixed() : Mixed();
+}
+
+template <>
+inline ObjectId JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
+{
+    return v.has_value() ? v.get_object_id() : ObjectId();
+}
+
+template <>
 inline Obj JavaContext::unbox(JavaValue const& v, CreatePolicy policy, ObjKey current_row) const
 {
     if (v.get_type() == JavaValueType::Object) {
         return *v.get_object();
-    } else if (policy == CreatePolicy::Skip) {
+    } else if (!policy.create) {
         return Obj();
     }
     REALM_ASSERT(object_schema);
@@ -530,9 +614,25 @@ inline util::Optional<float> JavaContext::unbox(JavaValue const& v, CreatePolicy
 }
 
 template <>
-inline Mixed JavaContext::unbox(JavaValue const&, CreatePolicy, ObjKey) const
+inline util::Optional<ObjectId> JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
 {
-    REALM_TERMINATE("'Mixed' not supported");
+    return v.has_value() ? util::make_optional(v.get_object_id()) : util::none;
+}
+
+template <>
+inline util::Optional<Decimal> JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
+{
+    return v.has_value() ? util::make_optional(v.get_decimal128()) : util::none;
+}
+
+template <>
+inline util::Optional<Mixed> JavaContext::unbox(JavaValue const& v, CreatePolicy, ObjKey) const
+{
+    return v.has_value() ? util::make_optional(v.get_mixed()) : util::none;
+}
+
+inline Obj JavaContext::create_embedded_object() {
+    return m_parent.create_and_set_linked_object(m_property->column_key);
 }
 
 }

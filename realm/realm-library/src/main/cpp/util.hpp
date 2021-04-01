@@ -55,6 +55,21 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved);
         ConvertException(env, __FILE__, __LINE__);                                                                   \
     }
 
+// Return a Decimal128 value as a jlongArray two value (low, high) or nullptrif the Decimal128 is null
+#define RETURN_DECIMAL128_AS_JLONG_ARRAY__OR_NULL(decimal128)                                          \
+    if (!decimal128.is_null()) {                                                                       \
+        uint64_t* raw = decimal128.raw()->w;                                                           \
+        jlongArray ret_array = env->NewLongArray(2);                                                   \
+        if (!ret_array) {                                                                              \
+            ThrowException(env, OutOfMemory, "Could not allocate memory to return decimal128 value."); \
+            return nullptr;                                                                            \
+        }                                                                                              \
+        jlong ret[2] = { jlong(raw[0])/*low*/, jlong(raw[1]) /*high*/};                                \
+        env->SetLongArrayRegion(ret_array, 0, 2, ret);                                                 \
+        return ret_array;                                                                              \
+    } else {                                                                                           \
+        return nullptr;                                                                                \
+    }
 
 #define MAX_JINT 0x7FFFFFFFL
 #define MAX_JSIZE MAX_JINT
@@ -149,7 +164,7 @@ inline bool RowIsValid(JNIEnv* env, realm::Obj* rowPtr)
 }
 
 template <class T>
-inline bool TypeValid(JNIEnv* env, T* pTable, jlong columnKey, int expectColType)
+inline bool TypeValid(JNIEnv* env, T* pTable, jlong columnKey, realm::ColumnType expectColType)
 {
     realm::ColKey col_key(columnKey);
     auto colType = col_key.get_type();
@@ -161,7 +176,7 @@ inline bool TypeValid(JNIEnv* env, T* pTable, jlong columnKey, int expectColType
     return true;
 }
 
-inline bool TypeValid(JNIEnv* env, realm::ConstTableRef table, jlong columnKey, int expectColType)
+inline bool TypeValid(JNIEnv* env, realm::ConstTableRef table, jlong columnKey, realm::ColumnType expectColType)
 {
     realm::ColKey col_key(columnKey);
     auto colType = col_key.get_type();
@@ -177,7 +192,7 @@ template <class T>
 inline bool ColIsNullable(JNIEnv* env, T table_ref, jlong columnKey)
 {
     realm::ColKey col = realm::ColKey(columnKey);
-    int colType = table_ref->get_column_type(col);
+    realm::DataType colType = table_ref->get_column_type(col);
     if (colType == realm::type_Link) {
         return true;
     }
@@ -221,7 +236,8 @@ jstring to_jstring(JNIEnv*, realm::StringData);
 
 class JStringAccessor {
 public:
-    JStringAccessor(JNIEnv*, jstring); // throws
+    JStringAccessor(JNIEnv* env, jstring s) : JStringAccessor(env, s, false) {}; // throws
+    JStringAccessor(JNIEnv*, jstring, bool); // throws
 
     bool is_null_or_empty() {
         return m_is_null || m_size == 0;

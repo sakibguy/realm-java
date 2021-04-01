@@ -26,19 +26,19 @@
 #include "util.hpp"
 #include "io_realm_internal_Util.h"
 #include "io_realm_internal_OsSharedRealm.h"
-#include "shared_realm.hpp"
-#include "results.hpp"
-#include "list.hpp"
-#include "java_exception_def.hpp"
-#include "java_object_accessor.hpp"
-#include "object.hpp"
+#include <realm/object-store/shared_realm.hpp>
+#include <realm/object-store/results.hpp>
+#include <realm/object-store/list.hpp>
+#include <realm/object-store/object.hpp>
+#include <realm/parser/query_parser.hpp>
 #if REALM_ENABLE_SYNC
-#include "sync/partial_sync.hpp"
+#include <realm/object-store/sync/app.hpp>
 #endif
 
+#include "java_exception_def.hpp"
+#include "java_object_accessor.hpp"
 #include "jni_util/java_exception_thrower.hpp"
 
-using namespace std;
 using namespace realm;
 using namespace realm::util;
 using namespace realm::jni_util;
@@ -48,7 +48,7 @@ void ThrowRealmFileException(JNIEnv* env, const std::string& message, realm::Rea
 
 void ConvertException(JNIEnv* env, const char* file, int line)
 {
-    ostringstream ss;
+    std::ostringstream ss;
     try {
         throw;
     }
@@ -122,7 +122,23 @@ void ConvertException(JNIEnv* env, const char* file, int line)
         ss << e.what() << " in " << file << " line " << line;
         ThrowException(env, IllegalState, ss.str());
     }
-    catch (realm::LogicError e) {
+    catch(DuplicatePrimaryKeyValueException& e) {
+        ss << e.what() << " in " << file << " line " << line;
+        ThrowException(env, IllegalArgument, ss.str());
+    }
+    catch(query_parser::SyntaxError& e) {
+        ss << e.what() << " in " << file << " line " << line;
+        ThrowException(env, IllegalArgument, ss.str());
+    }
+    catch(query_parser::InvalidQueryError& e) {
+        ss << e.what() << " in " << file << " line " << line;
+        ThrowException(env, IllegalArgument, ss.str());
+    }
+    catch(std::invalid_argument& e) {
+        ss << e.what() << " in " << file << " line " << line;
+        ThrowException(env, IllegalArgument, ss.str());
+    }
+    catch (realm::LogicError& e) {
         ExceptionKind kind;
         if (e.kind() == LogicError::string_too_big || e.kind() == LogicError::binary_too_big ||
             e.kind() == LogicError::column_not_nullable) {
@@ -133,31 +149,34 @@ void ConvertException(JNIEnv* env, const char* file, int line)
         }
         ThrowException(env, kind, e.what());
     }
-    catch(realm::MissingPropertyValueException e) {
+    catch(realm::MissingPropertyValueException& e) {
         ThrowException(env, IllegalArgument, e.what());
     }
-    catch(realm::RequiredFieldValueNotProvidedException e) {
+    catch(realm::RequiredFieldValueNotProvidedException& e) {
         ThrowException(env, IllegalArgument, e.what());
     }
 #if REALM_ENABLE_SYNC
-    catch (partial_sync::InvalidRealmStateException& e) {
-        ThrowException(env, IllegalState, e.what());
-    }
-    catch (partial_sync::ExistingSubscriptionException& e) {
-        ThrowException(env, IllegalArgument, e.what());
-    }
-    catch (partial_sync::QueryTypeMismatchException& e) {
-        ThrowException(env, IllegalArgument, e.what());
+    catch (realm::app::AppError& e) {
+        // TODO Figure out exactly what kind of mapping is needed here
+        if (e.is_custom_error()) {
+            ThrowException(env, IllegalArgument, e.message);
+        }
+        else if (e.error_code.value() == static_cast<int>(realm::app::ClientErrorCode::user_not_logged_in)) {
+            ThrowException(env, IllegalArgument, e.message);
+        }
+        else {
+            ThrowException(env, IllegalState, e.message);
+        }
     }
 #endif
-    catch (std::logic_error e) {
+    catch (std::logic_error& e) {
         ThrowException(env, IllegalState, e.what());
     }
-    catch (util::runtime_error& e) {
+    catch (std::runtime_error& e) {
         ss << e.what() << " in " << file << " line " << line;
         ThrowException(env, RuntimeError, ss.str());
     }
-    catch (exception& e) {
+    catch (std::exception& e) {
         ss << e.what() << " in " << file << " line " << line;
         ThrowException(env, FatalError, ss.str());
     }
@@ -171,7 +190,7 @@ void ThrowException(JNIEnv* env, ExceptionKind exception, const char* classStr)
 
 void ThrowException(JNIEnv* env, ExceptionKind exception, const std::string& classStr, const std::string& itemStr)
 {
-    string message;
+    std::string message;
     jclass jExceptionClass = NULL;
 
     Log::e("jni: ThrowingException %1, %2, %3.", exception, classStr.c_str(), itemStr.c_str());
@@ -303,16 +322,24 @@ struct JcharTraits {
 };
 
 struct JStringCharsAccessor {
-    JStringCharsAccessor(JNIEnv* e, jstring s)
+    JStringCharsAccessor(JNIEnv* e, jstring s, bool delete_jstring_ref_on_delete)
         : m_env(e)
         , m_string(s)
         , m_data(e->GetStringChars(s, 0))
         , m_size(get_size(e, s))
+        , m_delete_jstring_ref_on_delete(delete_jstring_ref_on_delete)
     {
     }
     ~JStringCharsAccessor()
     {
         m_env->ReleaseStringChars(m_string, m_data);
+        // TODO Left as opt-in to avoid inspecting all usages as part of the fix for
+        //  https://github.com/realm/realm-java/pull/7232. We should consider making this the
+        //  default and try to handle local refs uniformly through JavaLocalRefs or similar
+        //  mechanisms.
+        if (m_delete_jstring_ref_on_delete) {
+            m_env->DeleteLocalRef(m_string);
+        }
     }
     const jchar* data() const noexcept
     {
@@ -328,6 +355,7 @@ private:
     const jstring m_string;
     const jchar* const m_data;
     const size_t m_size;
+    const bool m_delete_jstring_ref_on_delete;
 
     static size_t get_size(JNIEnv* e, jstring s)
     {
@@ -340,10 +368,10 @@ private:
 
 } // anonymous namespace
 
-static string string_to_hex(const string& message, StringData& str, const char* in_begin, const char* in_end,
+static std::string string_to_hex(const std::string& message, StringData& str, const char* in_begin, const char* in_end,
                             jchar* out_curr, jchar* out_end, size_t retcode, size_t error_code)
 {
-    ostringstream ret;
+    std::ostringstream ret;
 
     const char* s = str.data();
     ret << message << " ";
@@ -352,7 +380,7 @@ static string string_to_hex(const string& message, StringData& str, const char* 
     ret << "StringData.size = " << str.size() << "; ";
     ret << "StringData.data = " << str << "; ";
     ret << "StringData as hex = ";
-    for (string::size_type i = 0; i < str.size(); ++i)
+    for (std::string::size_type i = 0; i < str.size(); ++i)
         ret << " 0x" << std::hex << std::setfill('0') << std::setw(2) << (int)s[i];
     ret << "; ";
     ret << "in_begin = " << in_begin << "; ";
@@ -362,11 +390,29 @@ static string string_to_hex(const string& message, StringData& str, const char* 
     return ret.str();
 }
 
-static string string_to_hex(const string& message, const jchar* str, size_t size, size_t error_code)
-{
-    ostringstream ret;
+static std::string str_to_hex_error_code_to_message(size_t error_code){
+    switch (error_code){
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+            return "Not enough output buffer space";
+        case 5:
+            return "Invalid first half of surrogate pair";
+        case 6:
+            return "Incomplete surrogate pair";
+        case 7:
+            return "Invalid second half of surrogate pair";
+        default:
+            return "Unknown";
+    }
+}
 
-    ret << message << "; ";
+static std::string string_to_hex(const std::string& message, const jchar* str, size_t size, size_t error_code)
+{
+    std::ostringstream ret;
+
+    ret << message << ": " << str_to_hex_error_code_to_message(error_code) << "; ";
     ret << "error_code = " << error_code << "; ";
     for (size_t i = 0; i < size; ++i) {
         ret << " 0x" << std::hex << std::setfill('0') << std::setw(4) << (int) str[i];
@@ -374,7 +420,7 @@ static string string_to_hex(const string& message, const jchar* str, size_t size
     return ret.str();
 }
 
-string concat_stringdata(const char* message, StringData strData)
+std::string concat_stringdata(const char* message, StringData strData)
 {
     if (strData.is_null()) {
         return std::string(message);
@@ -429,7 +475,7 @@ jstring to_jstring(JNIEnv* env, StringData str)
             throw util::runtime_error("String size overflow");
         }
         dyn_buf.reset(new jchar[size]);
-        out_curr = copy(out_begin, out_curr, dyn_buf.get());
+        out_curr = std::copy(out_begin, out_curr, dyn_buf.get());
         out_begin = dyn_buf.get();
         out_end = dyn_buf.get() + size;
         size_t retcode = Xcode::to_utf16(in_begin, in_end, out_curr, out_end);
@@ -451,7 +497,7 @@ transcode_complete : {
 }
 
 
-JStringAccessor::JStringAccessor(JNIEnv* env, jstring str)
+JStringAccessor::JStringAccessor(JNIEnv* env, jstring str, bool delete_jstring_ref)
     : m_env(env)
 {
     // For efficiency, if the incoming UTF-16 string is sufficiently
@@ -467,11 +513,11 @@ JStringAccessor::JStringAccessor(JNIEnv* env, jstring str)
     }
     m_is_null = false;
 
-    JStringCharsAccessor chars(env, str);
+    JStringCharsAccessor chars(env, str, delete_jstring_ref);
 
     typedef Utf8x16<jchar, JcharTraits> Xcode;
     size_t max_project_size = 48;
-    REALM_ASSERT(max_project_size <= numeric_limits<size_t>::max() / 4);
+    REALM_ASSERT(max_project_size <= std::numeric_limits<size_t>::max() / 4);
     size_t buf_size;
     if (chars.size() <= max_project_size) {
         buf_size = chars.size() * 4;

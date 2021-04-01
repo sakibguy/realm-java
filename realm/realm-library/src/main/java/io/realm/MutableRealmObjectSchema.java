@@ -16,6 +16,7 @@
 
 package io.realm;
 
+import java.util.Date;
 import java.util.Locale;
 
 import javax.annotation.Nonnull;
@@ -24,6 +25,7 @@ import io.realm.internal.CheckedRow;
 import io.realm.internal.OsObjectStore;
 import io.realm.internal.OsResults;
 import io.realm.internal.Table;
+import io.realm.internal.Util;
 import io.realm.internal.core.DescriptorOrdering;
 import io.realm.internal.fields.FieldDescriptor;
 
@@ -104,6 +106,7 @@ class MutableRealmObjectSchema extends RealmObjectSchema {
 
         if (containsAttribute(attributes, FieldAttribute.PRIMARY_KEY)) {
             checkAddPrimaryKeyForSync();
+            checkForObjectStoreInvalidPrimaryKeyTypes(fieldName, fieldType);
         }
 
         checkNewFieldName(fieldName);
@@ -227,6 +230,7 @@ class MutableRealmObjectSchema extends RealmObjectSchema {
         }
         long columnKey = getColumnKey(fieldName);
         final RealmFieldType fieldType = getFieldType(fieldName);
+        checkForObjectStoreInvalidPrimaryKeyTypes(fieldName, fieldType);
         if (fieldType != RealmFieldType.STRING && !table.hasSearchIndex(columnKey)) {
             // No exception will be thrown since adding PrimaryKey implies the column has an index.
             table.addSearchIndex(columnKey);
@@ -315,6 +319,16 @@ class MutableRealmObjectSchema extends RealmObjectSchema {
         return this;
     }
 
+    @Override
+    String getPropertyClassName(String propertyName) {
+        String linkedClassName = table.getLinkTarget(getColumnKey(propertyName)).getClassName();
+        if (Util.isEmptyString(linkedClassName)) {
+            throw new IllegalArgumentException(String.format("Property '%s' not found.", propertyName));
+        }
+
+        return linkedClassName;
+    }
+
     /**
      * Returns a field descriptor based on the internal field names found in the Realm file.
      *
@@ -384,6 +398,31 @@ class MutableRealmObjectSchema extends RealmObjectSchema {
     private void checkAddPrimaryKeyForSync() {
         if (realm.configuration.isSyncConfiguration()) {
             throw new UnsupportedOperationException("'addPrimaryKey' is not supported by synced Realms.");
+        }
+    }
+
+    // This method only does extra validation for primary keys that isn't done by Core.
+    // The reason being that ObjectStore currently has more restrictions on primary key types
+    // than what is offered by Core, e.g. Boolean being an allowed primary key in Core, but not
+    // ObjectStore. Since MutableRealmSchemas do not create an ObjectStore schema, we need to
+    // manually encode that difference here to avoid discrepency between allowed schemas for Realm
+    // and DynamicRealm
+    private void checkForObjectStoreInvalidPrimaryKeyTypes(String fieldName, Class<?> fieldType) {
+        if (fieldType == boolean.class || fieldType == Boolean.class) {
+            checkForObjectStoreInvalidPrimaryKeyTypes(fieldName, RealmFieldType.BOOLEAN);
+        }
+        if (fieldType == Date.class) {
+            checkForObjectStoreInvalidPrimaryKeyTypes(fieldName, RealmFieldType.DATE);
+        }
+    }
+    private void checkForObjectStoreInvalidPrimaryKeyTypes(String fieldName, RealmFieldType type) {
+        switch(type) {
+            case BOOLEAN:
+                throw new IllegalArgumentException("Boolean fields cannot be marked as primary keys: " + fieldName);
+            case DATE:
+                throw new IllegalArgumentException("Date fields cannot be marked as primary keys: " + fieldName);
+            default:
+                /* This is fine, or is checked by Core */
         }
     }
 }

@@ -16,6 +16,8 @@
 
 package io.realm.internal.core;
 
+import io.realm.Realm;
+import io.realm.internal.NativeContext;
 import io.realm.internal.NativeObject;
 import io.realm.internal.OsSchemaInfo;
 import io.realm.internal.OsSharedRealm;
@@ -48,6 +50,7 @@ public class DescriptorOrdering implements NativeObject {
      */
     public DescriptorOrdering() {
         nativePtr = nativeCreate();
+        NativeContext.dummyContext.addReference(this);
     }
 
     @Override
@@ -100,15 +103,6 @@ public class DescriptorOrdering implements NativeObject {
     }
 
     /**
-     * Add a linkingObject reference that should be fetched from the server.
-     * This only makes sense for Query-based Realms. It is up to callers of this method
-     * to ensure this.
-     */
-    public void appendIncludes(IncludeDescriptor descriptor) {
-        nativeAppendInclude(nativePtr, descriptor.getNativePtr());
-    }
-
-    /**
      * Returns true if no descriptors or limits have been added.
      */
     public boolean isEmpty() {
@@ -121,7 +115,6 @@ public class DescriptorOrdering implements NativeObject {
     private static native void nativeAppendSort(long descriptorPtr, QueryDescriptor includeDescriptor);
     private static native void nativeAppendDistinct(long descriptorPtr, QueryDescriptor includeDescriptor);
     private static native void nativeAppendLimit(long descriptorPtr, long limit);
-    private static native void nativeAppendInclude(long descriptorPtr, long includeDescriptorPtr);
     private static native boolean nativeIsEmpty(long descriptorPtr);
 
 }

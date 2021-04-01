@@ -26,12 +26,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import javax.annotation.Nullable;
 
 import io.realm.RealmConfiguration;
-import io.realm.RealmModel;
-import io.realm.exceptions.RealmException;
+import io.realm.RealmFieldType;
 import io.realm.internal.android.AndroidCapabilities;
 import io.realm.internal.android.AndroidRealmNotifier;
 import io.realm.internal.annotations.ObjectServer;
-import io.realm.sync.permissions.RealmPrivileges;
 
 @Keep
 public final class OsSharedRealm implements Closeable, NativeObject {
@@ -157,7 +155,7 @@ public final class OsSharedRealm implements Closeable, NativeObject {
     // SharedRealm which means the SharedRealm won't be closed automatically if there is any exception throws during
     // construction. GC will clear them later, but that would be too late. So we are tracking the temp OsSharedRealm
     // during the construction stage and manually close them if exception throws.
-    private final static List<OsSharedRealm> sharedRealmsUnderConstruction = new CopyOnWriteArrayList<OsSharedRealm>();
+    private static final List<OsSharedRealm> sharedRealmsUnderConstruction = new CopyOnWriteArrayList<OsSharedRealm>();
     private final List<OsSharedRealm> tempSharedRealmsForCallback = new ArrayList<OsSharedRealm>();
 
     private final List<WeakReference<PendingRow>> pendingRows = new CopyOnWriteArrayList<>();
@@ -175,7 +173,7 @@ public final class OsSharedRealm implements Closeable, NativeObject {
             this.nativePtr = nativeGetSharedRealm(osRealmConfig.getNativePtr(), version.version, version.index, realmNotifier);
         } catch (Throwable t) {
             // The SharedRealm instances have to be closed before throw.
-            for (OsSharedRealm sharedRealm: tempSharedRealmsForCallback) {
+            for (OsSharedRealm sharedRealm : tempSharedRealmsForCallback) {
                 if (!sharedRealm.isClosed()) {
                     sharedRealm.close();
                 }
@@ -329,10 +327,9 @@ public final class OsSharedRealm implements Closeable, NativeObject {
      * @param isNullable          if the primary key field is nullable or not.
      * @return a newly created {@link Table} object.
      */
-    public Table createTableWithPrimaryKey(String tableName, String primaryKeyFieldName, boolean isStringType,
+    public Table createTableWithPrimaryKey(String tableName, String primaryKeyFieldName, RealmFieldType primaryKeyFieldType,
                                            boolean isNullable) {
-        return new Table(this, nativeCreateTableWithPrimaryKeyField(nativePtr, tableName, primaryKeyFieldName,
-                isStringType, isNullable));
+        return new Table(this, nativeCreateTableWithPrimaryKeyField(nativePtr, tableName, primaryKeyFieldName, primaryKeyFieldType.getNativeValue(), isNullable));
     }
 
     public void renameTable(String oldName, String newName) {
@@ -373,17 +370,19 @@ public final class OsSharedRealm implements Closeable, NativeObject {
 
     @ObjectServer
     public int getPrivileges() {
-        return nativeGetRealmPrivileges(nativePtr);
+        // FIXME: Remove
+        return 0;
     }
 
     @ObjectServer
     public int getClassPrivileges(String className) {
-        return nativeGetClassPrivileges(nativePtr, className);
+        // FIXME: Remove
+        return 0;
     }
 
     @ObjectServer
     public int getObjectPrivileges(UncheckedRow row) {
-        return nativeGetObjectPrivileges(nativePtr, ((UncheckedRow) row).getNativePtr());
+        return 0;
     }
 
     public boolean isClosed() {
@@ -420,6 +419,10 @@ public final class OsSharedRealm implements Closeable, NativeObject {
 
     public RealmConfiguration getConfiguration() {
         return osRealmConfig.getRealmConfiguration();
+    }
+
+    public long getNumberOfVersions() {
+        return nativeNumberOfVersions(nativePtr);
     }
 
     @Override
@@ -462,15 +465,7 @@ public final class OsSharedRealm implements Closeable, NativeObject {
     }
 
     /**
-     * Returns {@code true} if this Realm is a query-based synchronized Realm.
-     */
-    public boolean isPartial() {
-        return nativeIsPartial(nativePtr);
-    }
-
-    /**
-     * Returns {@code true} if this Realm is a synchronized Realm, either query-based or fully
-     * synchronized.
+     * Returns {@code true} if this Realm is a synchronized Realm.
      */
     public boolean isSyncRealm() {
         return osRealmConfig.getResolvedRealmURI() != null;
@@ -607,7 +602,7 @@ public final class OsSharedRealm implements Closeable, NativeObject {
     // If isStringType is false, the PK field will be created as an integer PK field.
     private static native long nativeCreateTableWithPrimaryKeyField(long nativeSharedRealmPtr, String tableName,
                                                                     String primaryKeyFieldName,
-                                                                    boolean isStringType, boolean isNullable);
+                                                                    int primaryKeyFieldType, boolean isNullable);
 
     private static native String[] nativeGetTablesName(long nativeSharedRealmPtr);
 
@@ -636,16 +631,10 @@ public final class OsSharedRealm implements Closeable, NativeObject {
 
     private static native void nativeRegisterSchemaChangedCallback(long nativePtr, SchemaChangedCallback callback);
 
-    private static native int nativeGetRealmPrivileges(long nativePtr);
-
-    private static native int nativeGetClassPrivileges(long nativePtr, String className);
-
-    private static native int nativeGetObjectPrivileges(long nativePtr, long rowNativePtr);
-
-    private static native boolean nativeIsPartial(long nativePtr);
-
     private static native boolean nativeIsFrozen(long nativePtr);
 
     private static native long nativeFreeze(long nativePtr);
+
+    private static native long nativeNumberOfVersions(long nativePtr);
 
 }

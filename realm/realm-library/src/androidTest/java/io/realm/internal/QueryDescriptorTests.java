@@ -16,7 +16,7 @@
 
 package io.realm.internal;
 
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.junit.After;
 import org.junit.Before;
@@ -90,7 +90,7 @@ public class QueryDescriptorTests {
     }
 
     @Test
-    public void getInstanceForDistinct_shouldThrowOnLinkAndListListField() {
+    public void getInstanceForDistinct_shouldThrowOnListField() {
         RealmFieldType type = RealmFieldType.STRING;
         RealmFieldType objectType = RealmFieldType.OBJECT;
         RealmFieldType listType = RealmFieldType.LIST;
@@ -100,12 +100,6 @@ public class QueryDescriptorTests {
 
         try {
             QueryDescriptor.getInstanceForDistinct(null, table, String.format("%s.%s", listType.name(), type.name()));
-            fail();
-        } catch (IllegalArgumentException ignored) {
-        }
-
-        try {
-            QueryDescriptor.getInstanceForDistinct(null, table, String.format("%s.%s", objectType.name(), type.name()));
             fail();
         } catch (IllegalArgumentException ignored) {
         }
@@ -259,14 +253,7 @@ public class QueryDescriptorTests {
         for (RealmFieldType type : RealmFieldType.values()) {
             if (!filter.contains(type)) {
                 switch (type) {
-                    case LINKING_OBJECTS: // TODO: should be supported?s
-                    case INTEGER_LIST: // FIXME zaki50 revisit this once Primitive List query is implemented
-                    case BOOLEAN_LIST:
-                    case STRING_LIST:
-                    case BINARY_LIST:
-                    case DATE_LIST:
-                    case FLOAT_LIST:
-                    case DOUBLE_LIST:
+                    case LINKING_OBJECTS:
                         break;
                     case LIST:
                     case OBJECT:

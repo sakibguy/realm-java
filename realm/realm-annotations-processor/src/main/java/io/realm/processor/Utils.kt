@@ -105,6 +105,17 @@ object Utils {
     }
 
     /**
+     * @return `true` if a field is of type "org.bson.types.ObjectId", `false` otherwise.
+     * @throws IllegalArgumentException if the field is `null`.
+     */
+    fun isObjectId(field: VariableElement?): Boolean {
+        if (field == null) {
+            throw IllegalArgumentException("Argument 'field' cannot be null.")
+        }
+        return getFieldTypeQualifiedName(field).toString() == "org.bson.types.ObjectId"
+    }
+
+    /**
      * @return `true` if a field is a primitive type, `false` otherwise.
      * @throws IllegalArgumentException if the typeString is `null`.
      */
@@ -305,6 +316,15 @@ object Utils {
         val fieldType = field.asType()
         val typeArguments = (fieldType as DeclaredType).typeArguments
         return if (typeArguments.isEmpty()) null else QualifiedClassName(typeArguments[0].toString())
+    }
+
+    /**
+     * Return generic type mirror if any.
+     */
+    fun getGenericType(field: VariableElement): TypeMirror? {
+        val fieldType = field.asType()
+        val typeArguments = (fieldType as DeclaredType).typeArguments
+        return if (typeArguments.isEmpty()) null else typeArguments[0]
     }
 
     /**

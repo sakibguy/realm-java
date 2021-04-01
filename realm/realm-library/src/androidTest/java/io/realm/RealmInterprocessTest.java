@@ -29,9 +29,9 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.annotation.UiThreadTest;
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.annotation.UiThreadTest;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.junit.After;
 import org.junit.Before;
@@ -126,7 +126,7 @@ public class RealmInterprocessTest {
     private class InterprocessHandler extends Handler {
         // Timeout Watchdog. In case the service crashed or expected response is not returned.
         // It is very important to feed the dog after the expected message arrived.
-        private final int timeout = 5000;
+        private final static int timeout = 5000;
         private volatile boolean isTimeout = true;
         private Runnable timeoutRunnable = new Runnable() {
             @Override
@@ -234,7 +234,7 @@ public class RealmInterprocessTest {
     }
 
     private Context getContext() {
-        return InstrumentationRegistry.getTargetContext();
+        return InstrumentationRegistry.getInstrumentation().getTargetContext();
     }
 
     // Gets the remote process info if it is alive.

@@ -16,8 +16,8 @@
 
 #include "io_realm_internal_Property.h"
 
-#include <property.hpp>
-#include <object_store.hpp>
+#include <realm/object-store/property.hpp>
+#include <realm/object-store/object_store.hpp>
 
 #include "util.hpp"
 
@@ -42,20 +42,23 @@ static void finalize_property(jlong ptr)
 }
 
 JNIEXPORT jlong JNICALL Java_io_realm_internal_Property_nativeCreatePersistedProperty(JNIEnv* env, jclass,
-                                                                                      jstring j_name_str, jint type,
+                                                                                      jstring j_internal_name,
+                                                                                      jstring j_public_name,
+                                                                                      jint type,
                                                                                       jboolean is_primary,
                                                                                       jboolean is_indexed)
 {
     try {
-        JStringAccessor str(env, j_name_str);
+        JStringAccessor public_name(env, j_public_name);
+        JStringAccessor internal_name(env, j_internal_name);
         PropertyType p_type = static_cast<PropertyType>(static_cast<int>(type));
         std::unique_ptr<Property> property(
-            new Property(str, p_type, to_bool(is_primary), to_bool(is_indexed)));
+            new Property(internal_name, p_type, to_bool(is_primary), to_bool(is_indexed), public_name));
         if (to_bool(is_indexed) && !property->type_is_indexable()) {
             throw std::invalid_argument(
                 "This field cannot be indexed - Only String/byte/short/int/long/boolean/Date fields are supported.");
         }
-        if (to_bool(is_primary) && p_type != PropertyType::Int && p_type != PropertyType::String) {
+        if (to_bool(is_primary) && p_type != PropertyType::Int && p_type != PropertyType::String && p_type != PropertyType::ObjectId) {
             std::string typ = property->type_string();
             throw std::invalid_argument("Invalid primary key type: " + typ);
         }
@@ -66,15 +69,17 @@ JNIEXPORT jlong JNICALL Java_io_realm_internal_Property_nativeCreatePersistedPro
 }
 
 JNIEXPORT jlong JNICALL Java_io_realm_internal_Property_nativeCreatePersistedLinkProperty(JNIEnv* env, jclass,
-                                                                                          jstring j_name_str,
+                                                                                          jstring j_internal_name,
+                                                                                          jstring j_public_name,
                                                                                           jint type,
                                                                                           jstring j_target_class_name)
 {
     try {
-        JStringAccessor name(env, j_name_str);
-        JStringAccessor link_name(env, j_target_class_name);
+        JStringAccessor public_name(env, j_public_name);
+        JStringAccessor internal_name(env, j_internal_name);
+        JStringAccessor link_class_name(env, j_target_class_name);
         PropertyType p_type = static_cast<PropertyType>(static_cast<int>(type));
-        return reinterpret_cast<jlong>(new Property(name, p_type, link_name));
+        return reinterpret_cast<jlong>(new Property(internal_name, p_type, link_class_name, "", public_name));
     }
     CATCH_STD()
     return 0;

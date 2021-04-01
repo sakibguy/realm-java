@@ -16,6 +16,9 @@
 
 package io.realm.internal;
 
+import org.bson.types.Decimal128;
+import org.bson.types.ObjectId;
+
 import java.util.Date;
 
 import javax.annotation.Nullable;
@@ -104,6 +107,8 @@ public class Table implements NativeObject {
             case DATE:
             case FLOAT:
             case DOUBLE:
+            case DECIMAL128:
+            case OBJECT_ID:
                 return nativeAddColumn(nativeTableRefPtr, type.getNativeValue(), name, isNullable);
 
             case INTEGER_LIST:
@@ -113,6 +118,8 @@ public class Table implements NativeObject {
             case DATE_LIST:
             case FLOAT_LIST:
             case DOUBLE_LIST:
+            case DECIMAL128_LIST:
+            case OBJECT_ID_LIST:
                 return nativeAddPrimitiveListColumn(nativeTableRefPtr, type.getNativeValue() - 128, name, isNullable);
 
             default:
@@ -254,12 +261,10 @@ public class Table implements NativeObject {
 
     /**
      * Clears the table i.e., deleting all rows in the table.
-     *
-     * If using partial sync, this method will behave similarly to 'findAll().deleteFromRealm()'.
      */
-    public void clear(boolean partialRealm) {
+    public void clear() {
         checkImmutable();
-        nativeClear(nativeTableRefPtr, partialRealm);
+        nativeClear(nativeTableRefPtr);
     }
 
     // Column Information.
@@ -480,6 +485,24 @@ public class Table implements NativeObject {
         nativeSetByteArray(nativeTableRefPtr, columnKey, rowKey, data, isDefault);
     }
 
+    public void setDecimal128(long columnKey, long rowKey, @Nullable Decimal128 value, boolean isDefault) {
+        checkImmutable();
+        if (value == null) {
+            nativeSetNull(nativeTableRefPtr, columnKey, rowKey, isDefault);
+        } else {
+            nativeSetDecimal128(nativeTableRefPtr, columnKey, rowKey, value.getLow(), value.getHigh(), isDefault);
+        }
+    }
+
+    public void setObjectId(long columnKey, long rowKey, @Nullable ObjectId value, boolean isDefault) {
+        checkImmutable();
+        if (value == null) {
+            nativeSetNull(nativeTableRefPtr, columnKey, rowKey, isDefault);
+        } else {
+            nativeSetObjectId(nativeTableRefPtr, columnKey, rowKey, value.toString(), isDefault);
+        }
+    }
+
     public void setLink(long columnKey, long rowKey, long value, boolean isDefault) {
         checkImmutable();
         nativeSetLink(nativeTableRefPtr, columnKey, rowKey, value, isDefault);
@@ -583,6 +606,20 @@ public class Table implements NativeObject {
         return nativeFindFirstString(nativeTableRefPtr, columnKey, value);
     }
 
+    public long findFirstDecimal128(long columnKey, Decimal128 value) {
+        if (value == null) {
+            throw new IllegalArgumentException("null is not supported");
+        }
+        return nativeFindFirstDecimal128(nativeTableRefPtr, columnKey, value.getLow(), value.getHigh());
+    }
+
+    public long findFirstObjectId(long columnKey, ObjectId value) {
+        if (value == null) {
+            throw new IllegalArgumentException("null is not supported");
+        }
+        return nativeFindFirstObjectId(nativeTableRefPtr, columnKey, value.toString());
+    }
+
     /**
      * Searches for first occurrence of null. Beware that the order in the column is undefined.
      *
@@ -633,8 +670,8 @@ public class Table implements NativeObject {
         stringBuilder.append(" columns: ");
 
         boolean isFirst = true;
-        for (String column: getColumnNames()) {
-            if(!isFirst) {
+        for (String column : getColumnNames()) {
+            if (!isFirst) {
                 stringBuilder.append(", ");
             }
             isFirst = false;
@@ -676,6 +713,18 @@ public class Table implements NativeObject {
         return new Table(frozenRealm, nativeFreeze(frozenRealm.getNativePtr(), nativeTableRefPtr));
     }
 
+    public boolean isEmbedded() {
+        return nativeIsEmbedded(nativeTableRefPtr);
+    }
+
+    /**
+     * Returns true if the state was changed, false if not. If false was returned, it meant
+     * some invariant was broken when trying to change the state
+     */
+    public boolean setEmbedded(boolean embedded) {
+        return nativeSetEmbedded(nativeTableRefPtr, embedded);
+    }
+
     @Nullable
     public static String getClassNameForTable(@Nullable String name) {
         if (name == null) { return null; }
@@ -711,7 +760,7 @@ public class Table implements NativeObject {
 
     private native long nativeSize(long nativeTableRefPtr);
 
-    private native void nativeClear(long nativeTableRefPtr, boolean partialRealm);
+    private native void nativeClear(long nativeTableRefPtr);
 
     private native long nativeGetColumnCount(long nativeTableRefPtr);
 
@@ -743,6 +792,10 @@ public class Table implements NativeObject {
 
     private native long nativeGetLinkTarget(long nativePtr, long columnKey);
 
+    private native long[] nativeGetDecimal128(long nativePtr, long columnKey, long rowKey);
+
+    private native String nativeGetObjectId(long nativePtr, long columnKey, long rowKey);
+
     private native boolean nativeIsNull(long nativePtr, long columnKey, long rowKey);
 
     native long nativeGetRowPtr(long nativePtr, long objKey);
@@ -764,6 +817,10 @@ public class Table implements NativeObject {
     public static native void nativeSetNull(long nativeTableRefPtr, long columnKey, long rowKey, boolean isDefault);
 
     public static native void nativeSetByteArray(long nativePtr, long columnKey, long rowKey, byte[] data, boolean isDefault);
+
+    public static native void nativeSetDecimal128(long nativeTableRefPtr, long columnKey, long rowKey, long low, long high, boolean isDefault);
+
+    public static native void nativeSetObjectId(long nativeTableRefPtr, long columnKey, long rowKey, String data, boolean isDefault);
 
     public static native void nativeSetLink(long nativeTableRefPtr, long columnKey, long rowKey, long value, boolean isDefault);
 
@@ -799,6 +856,10 @@ public class Table implements NativeObject {
 
     public static native long nativeFindFirstString(long nativeTableRefPtr, long columnKey, String value);
 
+    public static native long nativeFindFirstDecimal128(long nativeTableRefPtr, long columnKey, long low, long high);
+
+    public static native long nativeFindFirstObjectId(long nativeTableRefPtr, long columnKey, String value);
+
     public static native long nativeFindFirstNull(long nativeTableRefPtr, long columnKey);
 
     private native String nativeGetName(long nativeTableRefPtr);
@@ -808,4 +869,8 @@ public class Table implements NativeObject {
     private static native long nativeGetFinalizerPtr();
 
     private static native long nativeFreeze(long frozenSharedRealmPtr, long nativeTableRefPtr);
+
+    private static native boolean nativeIsEmbedded(long nativeTableRefPtr);
+
+    private static native boolean nativeSetEmbedded(long nativeTableRefPtr, boolean isEmbedded);
 }

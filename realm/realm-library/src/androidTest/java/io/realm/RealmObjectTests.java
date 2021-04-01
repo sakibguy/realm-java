@@ -16,8 +16,8 @@
 
 package io.realm;
 
-import android.support.test.rule.UiThreadTestRule;
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.rule.UiThreadTestRule;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
@@ -111,7 +111,6 @@ public class RealmObjectTests {
         }
     }
 
-    // FIXME remove?
     @Test
     public void row_isValid() {
         realm.beginTransaction();
@@ -120,7 +119,7 @@ public class RealmObjectTests {
         realm.commitTransaction();
 
         assertNotNull("RealmObject.realmGetRow returns zero ", row);
-        assertEquals(17, row.getColumnCount());
+        assertEquals(22, row.getColumnCount());
     }
 
     @Test
@@ -476,6 +475,17 @@ public class RealmObjectTests {
         realm.commitTransaction();
         String expected = CustomMethods.CUSTOM_TO_STRING;
         assertEquals(expected, cm.toString());
+    }
+
+    // Test for https://github.com/realm/realm-java/issues/7084
+    @Test
+    public void toString_nullBinary() {
+        realm.beginTransaction();
+        AllJavaTypes obj = realm.createObject(AllJavaTypes.class, 1);
+        obj.setFieldBinary(null);
+        realm.commitTransaction();
+        String desc = obj.toString();
+        assertTrue(desc.contains("fieldBinary:null"));
     }
 
     @Test

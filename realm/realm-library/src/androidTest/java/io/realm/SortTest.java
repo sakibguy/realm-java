@@ -17,8 +17,8 @@
 package io.realm;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import org.junit.After;
 import org.junit.Before;
@@ -521,7 +521,7 @@ public class SortTest {
             @Override
             public void onChange(RealmResults<AllTypes> element) {
                 assertEquals(TEST_SIZE + 1, element.size());
-                int i = 0;
+                long i = 0;
                 for (AllTypes allTypes : element) {
                     assertEquals(new Date(i), allTypes.getColumnDate());
                     i++;
@@ -537,7 +537,7 @@ public class SortTest {
             @Override
             public void onChange(RealmResults<AllTypes> element) {
                 assertEquals(TEST_SIZE + 1, element.size());
-                int i = element.size() - 1;
+                long i = ((long) element.size()) - 1;
                 for (AllTypes allTypes : element) {
                     assertEquals(new Date(i), allTypes.getColumnDate());
                     i--;

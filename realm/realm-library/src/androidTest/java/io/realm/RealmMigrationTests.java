@@ -17,9 +17,11 @@
 package io.realm;
 
 import android.content.Context;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.runner.AndroidJUnit4;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+
+import org.bson.types.ObjectId;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Before;
@@ -41,6 +43,7 @@ import io.realm.entities.CatOwner;
 import io.realm.entities.Dog;
 import io.realm.entities.FieldOrder;
 import io.realm.entities.NullTypes;
+import io.realm.entities.ObjectIdPrimaryKey;
 import io.realm.entities.PrimaryKeyAsBoxedByte;
 import io.realm.entities.PrimaryKeyAsBoxedInteger;
 import io.realm.entities.PrimaryKeyAsBoxedLong;
@@ -648,7 +651,7 @@ public class RealmMigrationTests {
                             public void apply(DynamicRealmObject obj) {
                                 String fieldValue = obj.getString(MigrationPrimaryKey.FIELD_PRIMARY);
                                 if (fieldValue != null && fieldValue.length() != 0) {
-                                    obj.setInt(TEMP_FIELD_ID, Integer.valueOf(fieldValue).intValue());
+                                    obj.setInt(TEMP_FIELD_ID, Integer.parseInt(fieldValue));
                                 } else {
                                     // Since this cannot be accepted as proper pk value, we'll delete it.
                                     // *You can modify with some other value such as 0, but that's not
@@ -695,7 +698,7 @@ public class RealmMigrationTests {
                             public void apply(DynamicRealmObject obj) {
                                 String fieldValue = obj.getString(MigrationPrimaryKey.FIELD_PRIMARY);
                                 if (fieldValue != null && fieldValue.length() != 0) {
-                                    obj.setInt(TEMP_FIELD_ID, Integer.valueOf(fieldValue));
+                                    obj.setInt(TEMP_FIELD_ID, Integer.parseInt(fieldValue));
                                 } else {
                                     obj.setNull(TEMP_FIELD_ID);
                                 }
@@ -852,7 +855,7 @@ public class RealmMigrationTests {
         realm = Realm.getInstance(realmConfig);
         RealmObjectSchema schema = realm.getSchema().get("AnnotationTypes");
         assertTrue(schema.hasPrimaryKey());
-        assertTrue(schema.hasIndex("id"));
+        assertFalse(schema.hasIndex("id"));
         realm.close();
     }
 
@@ -886,7 +889,7 @@ public class RealmMigrationTests {
         Table table = realm.getTable(AnnotationTypes.class);
         assertEquals(3, table.getColumnCount());
         assertEquals("id", OsObjectStore.getPrimaryKeyForObject(realm.getSharedRealm(), "AnnotationTypes"));
-        assertTrue(table.hasSearchIndex(table.getColumnKey("id")));
+        assertFalse(table.hasSearchIndex(table.getColumnKey("id")));
         assertTrue(table.hasSearchIndex(table.getColumnKey("indexString")));
     }
 
@@ -898,7 +901,7 @@ public class RealmMigrationTests {
             Realm.getInstance(configFactory.createConfiguration());
             fail();
         } catch (RealmMigrationNeededException expected) {
-            assertEquals(expected.getPath(), realm.getCanonicalPath());
+            assertEquals(expected.getPath(), realm.getAbsolutePath());
         }
     }
 
@@ -1433,8 +1436,10 @@ public class RealmMigrationTests {
         }
     }
 
-    // File format 9 (up to Core5) added an index automatically to the primary key, in Core6 (File format 10) string based PK are not
-    // indexed because the search index is derived from the ObjectKey.
+    // File format 9 (up to Core5) added an index automatically to the primary key, in Core6
+    // (File format 10) string based PK are not indexed because the search index is derived from
+    // the ObjectKey. So the Index was stripped if found. However, this turned out to cause other bugs: https://github.com/realm/realm-core/pull/3893
+    // In file format 11, the index is thus re-added for String primary keys.
     @Test
     public void core5AutomaticIndexOnStringPKShouldOpenInCore6() throws IOException {
         configFactory.copyRealmFromAssets(context,
@@ -1449,6 +1454,38 @@ public class RealmMigrationTests {
         MigrationCore6PKStringIndexedByDefault first = realm.where(MigrationCore6PKStringIndexedByDefault.class).findFirst();
         assertNotNull(first);
         assertEquals("Foo", first.name);
+    }
+
+    @Test
+    public void migrateRealm_addPrimaryKey_objectId() {
+        // Creates v0 of the Realm.
+        RealmConfiguration originalConfig = configFactory.createConfigurationBuilder()
+                .schema(StringOnly.class)
+                .build();
+        Realm.getInstance(originalConfig).close();
+
+        RealmMigration migration = new RealmMigration() {
+            @Override
+            public void migrate(DynamicRealm realm, long oldVersion, long newVersion) {
+                RealmSchema schema = realm.getSchema();
+                schema.create(ObjectIdPrimaryKey.CLASS_NAME)
+                        .addField(ObjectIdPrimaryKey.PROPERTY_OBJECT_ID, ObjectId.class)
+                        .addPrimaryKey(ObjectIdPrimaryKey.PROPERTY_OBJECT_ID);
+            }
+        };
+
+        // Creates v1 of the Realm.
+        RealmConfiguration realmConfig = configFactory.createConfigurationBuilder()
+                .schemaVersion(1)
+                .schema(StringOnly.class, ObjectIdPrimaryKey.class)
+                .migration(migration)
+                .build();
+
+        realm = Realm.getInstance(realmConfig);
+        RealmObjectSchema schema = realm.getSchema().get(ObjectIdPrimaryKey.CLASS_NAME);
+        assertTrue(schema.hasPrimaryKey());
+        assertFalse(schema.hasIndex(ObjectIdPrimaryKey.PROPERTY_OBJECT_ID));
+        realm.close();
     }
 
     // TODO Add unit tests for default nullability
