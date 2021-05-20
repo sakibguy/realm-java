@@ -1,3 +1,29 @@
+## 10.5.0 (2021-05-07)
+
+### Breaking Changes
+* [RealmApp] `SyncSession.State.WaitingForAccessToken` has been added. It represents the local access token not longer being valid, but is automatically being refreshed.
+
+### Enhancements
+* We now make a backup of a Realm file prior to any file format upgrade. The backup is retained for 3 months. Backups from before a file format upgrade allows for better analysis of any upgrade failure. We also restore a backup, if a) an attempt is made to open a realm file whith a "future" file format and b) a backup file exist that fits the current file format. The backup file is placed next to the real Realm file and is named `<fileName>.v<realmFileFormatVersion>.backup.realm`.
+* The error message when the intial steps of opening a Realm file fails is now more descriptive.
+
+### Fixes
+* [RealmApp] Client Reset errors now correctly forward the server error message. (Issue [#7363](https://github.com/realm/realm-java/issues/7363), since 10.0.0)
+* [RealmApp] All `AppException`s now correctly report the error message through `RuntimeException.getMessage()` instead of only through `AppException.getErrorMessage()`. 
+* [RealmApp] Proactively check the expiry time on the access token and refresh it before attempting to initiate a sync session. This prevents some error logs from appearing on the client such as: "ERROR: Connection[1]: Websocket: Expected HTTP response 101 Switching Protocols, but received: HTTP/1.1 401 Unauthorized" (RCORE-473, since v10.0.0).
+* Fix name aliasing not working in sort/distinct clauses of raw string predicates.
+* Fix collection notification reporting for modifications. This could be observed by receiving the wrong indices of modifications on sorted or distinct results, or notification sometimes not being called when only modifications have occured. (since v7.0.0).
+* Make conversion of Decimal128 to/from string work for numbers with more than 19 significant digits. (#4548)
+
+### Compatibility
+* File format: Generates Realms with format v20. Unsynced Realms will be upgraded from Realm Java 2.0 and later. Synced Realms can only be read and upgraded if created with Realm Java v10.0.0-BETA.1.
+* APIs are backwards compatible with all previous release of realm-java in the 10.x.y series.
+* Realm Studio 10.0.0 or above is required to open Realms created by this version.
+
+### Internal
+* Updated to Realm Core 10.7.1, commit 5043c25e1d8f5971002e0fec85dea5ea3d7eb3d7.
+
+
 ## 10.4.0 (2021-03-26)
 
 All releases from 10.4.0 and forward are now found on `mavenCentral()` instead of `jcenter()`. 
