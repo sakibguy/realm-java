@@ -1,4 +1,21 @@
-## 10.7.0 (YYYY-MM-DD)
+## 10.8.0 (YYYY-MM-DD)
+
+### Enhancements
+* None.
+
+### Fixed
+* None.
+
+### Compatibility
+* File format: Generates Realms with format v22. Unsynced Realms will be upgraded from Realm Java 2.0 and later. Synced Realms can only be read and upgraded if created with Realm Java v10.0.0-BETA.1.
+* APIs are backwards compatible with all previous release of realm-java in the 10.6.y series.
+* Realm Studio 11.0.0-alpha.0 or above is required to open Realms created by this version.
+
+### Internal
+* None.
+
+
+## 10.7.0 (2021-07-27)
 
 ### Breaking Changes
 * Removed automatic injection of repositories from Gradle plugin. From now on `mavenCentral()` repository needs to be added manually. (Issue [#7365](https://github.com/realm/realm-java/issues/7365))
@@ -7,17 +24,22 @@
 * None.
 
 ### Fixed
+* [RealmApp] Realm.getInstanceAsync does not wait for the initial remote data. (Issue [#7517](https://github.com/realm/realm-java/issues/7517))
 * Build errors when doing incremental builds with Android Studio's _Apply Changes..._-actions. (Issue [#7473](https://github.com/realm/realm-java/issues/7473))
 
 ### Compatibility
+* File format: Generates Realms with format v22. Unsynced Realms will be upgraded from Realm Java 2.0 and later. Synced Realms can only be read and upgraded if created with Realm Java v10.0.0-BETA.1.
+* APIs are backwards compatible with all previous release of realm-java in the 10.6.y series.
+* Realm Studio 11.0.0-alpha.0 or above is required to open Realms created by this version.
 
 ### Internal
-* None.
+* Updated to Realm Core 11.1.1, commit: 71db56caba8f8ef0398eedfffb82a908cb94ccec.
 
 
 ## 10.6.1 (2021-07-01)
 
 ### Enhancements
+* None.
 
 ### Fixed
 * [RealmApp] Configuring HTTP timeout through `AppConfiguration.Builder.requestTimeout()` did not work correctly. (Issue [#7455](https://github.com/realm/realm-java/issues/7455))
