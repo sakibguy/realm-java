@@ -272,9 +272,9 @@ These tests may take as much as half an hour to complete.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more details!
 
-This project adheres to the [Contributor Covenant Code of Conduct](https://realm.io/conduct).
+This project adheres to the [MongoDB Code of Conduct](https://www.mongodb.com/community-code-of-conduct).
 By participating, you are expected to uphold this code. Please report
-unacceptable behavior to [info@realm.io](mailto:info@realm.io).
+unacceptable behavior to [community-conduct@mongodb.com](mailto:community-conduct@mongodb.com).
 
 The directory `realm/config/studio` contains lint and style files recommended for project code.
 Import them from Android Studio with Android Studio > Preferences... > Code Style > Manage... > Import,
